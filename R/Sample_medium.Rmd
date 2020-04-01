@@ -1,0 +1,414 @@
+---
+title: "Lipidomics by R"
+output: html_notebook
+---
+
+製薬企業の仕事では、化合物の構造を扱うことがよくあります。 自社で合成した新薬候補の化合物やその代謝物、および生体内にもともと存在する内因性の代謝産物（アミノ酸、糖、脂質など）の濃度測定や構造解析をするスキルは重要です。
+
+そこでここでは、生体内に存在する脂質の網羅的解析であるLipidomics（リピドミクス）を題材としてRのプログラミングについて解説していきます。 脂質は、様々な構造を持つ分子種が生体内に存在しており、*in silico*で構造を生成できる分子種は100万種を越えます。 こうした分子種の構造を一つ一つ記述したり、分子量や極性などの物性値を算出したりするのは手作業では現実的に難しく、プログラミングが必須になります。
+
+脂質の構造や物性値をプログラミングで扱えるようになれば、新薬候補化合物を対象とするケモインフォマティクスにも応用が利きますので、是非習得してもらえればと思います。
+
+# 1. 変数とデータ型
+
+`変数 <- 値`とすることで、新しい変数を作成することができます。
+また、`print()`を使うことで、かっこ内のオブジェクト（変数の値やプログラムの実行結果など）を出力することができます。
+`#`以降の文字列はコメントとして認識され、プログラムの実行範囲からは除外されます。スクリプトの中にメモを書いたり、エラーが出る部分を実行されないようにしたりするときに使えます。
+
+## 1.1. 文字列と数値
+
+```{r}
+lipid.class <- "FA" # 文字列
+Cn <- 16 # 数値
+Un <- 16 # 数値
+
+print(lipid.class) # 変数「lipid.class」の値を出力
+print(Cn) # 変数「Cn」の値を出力
+print(Un) # 変数「Un」の値を出力
+```
+
+変数名は基本的に英単語を使い、数字から始まる変数名をつけることはできません（2文字目以降であれば数字を使うことも可能です）。 変数にどんな値が格納されているのか一目で分かる変数名にすると良いです。 複数単語になる場合は、`.`（ピリオド）で区切り、各単語は基本的には全て小文字で書きます。
+
+文字列は、`"`（クォーテーション）で囲む必要があります。 逆に言うと、クォーテーションで囲まれた数字も文字列として扱われます。
+`typeof`を使うことで、かっこ内のオブジェクトのデータ型を確認することができます。
+
+```{r}
+Cn.int <- 16 # 数値のとしての「16」
+print(typeof(Cn.int)) # "double"
+
+Cn.chr <- "16" # 文字列としての「16」
+print(typeof(Cn.chr)) # "character"
+```
+
+ここで、`lipid.class`という変数に格納した`FA`というのは、「fatty acid」すなわち「脂肪酸」の略です。 `lipid.class`というのは、日本語でいうと「脂質クラス」で、脂質のカテゴリーを示します。
+
+また、`Cn`は「number of carbon atoms」すなわち炭素原子の数（炭素鎖の長さ）を、 `Un`は「number (degree) of unsaturation」すなわち不飽和度（二重結合の数）を示しています。
+
+脂質クラスの中でも、脂肪酸は一番単純な構造で、`Cn`と`Un`を指定すれば、構造がほぼ決まります。
+
+他の脂質クラスの多くは、グリセロールなどの骨格に脂肪酸が結合した化学構造となっていて、骨格部分が脂質クラスを特徴づけるものとなっています。
+
+脂質クラスと炭素原子数、不飽和度を組み合わせることで、脂質の分子種がほぼ決まります。
+
+そこで、`lipid.class`と`Cn`と`Un`を文字列として結合することを考えます。
+
+ちなみに、脂肪酸で炭素原子数が16、二重結合数が0の分子種はパルミチン酸（palmitic acid）になります。 パルミチン酸の化学構造などは、以下のリンク先のページに掲載されていますので、適宜参照してください。
+
+[Palmitic acid (FA 16:0) | LIPID MAPS Structure Database](https://www.lipidmaps.org/data/LMSDRecord.php?LMID=LMFA01010001)
+
+```{r}
+lipid.class <- "FA"
+Cn <- 16
+Un <- 0
+
+molecular.species <- paste0(lipid.class, " ", Cn, ":", Un)
+print(molecular.species)
+```
+
+`paste0`を用いることで、文字列を結合させることができます。
+
+ここで、`" "`は半角スペースです。
+
+また、リピドミクスの分野では、`Cn`と`Un`を`:`でつなぐのが慣習となっています。
+
+化合物の構造を記述する方法として、「SMILES (simplified molecular input line entry system) 記法」というものがあります。
+
+以下のように、文字列だけで化学構造を記述することができます。
+
+```{r}
+Cn = 16
+carbons = paste0(rep("C", Cn-1), collapse = "")
+
+smiles.pa <- paste0("OC(", carbons, ")=O", collapse = "")
+print(smiles.pa)
+```
+
+上のように、SMILES記法では、水素原子（H）を使わずに、化学構造を記述します。
+SMILES記法なら、`Cn`の値が変わっても、自動的に分子構造を記述することができます。
+
+```{r}
+smiles.la <- "OC(CCCCCCC/C=C\\C/C=C\\CCCCC)=O"
+smiles.la.oxidized <- gsub("/C=C\\C", "C(O)CC", smiles.la)
+print(smiles.la.oxidized)
+```
+
+二重結合は`=`を使って記述します。
+`/`や`\`は二重結合が*cis*なのか*trans*なのかを示し、二重結合を形成する炭素原子の前または後ろの記号が異なる向きなら*cis*、同じ向きなら*trans*となります。
+
+## 1.2. 真偽値
+
+真偽値（ブール型）は、`TRUE`または`FALSE`のどちらかになるデータ型を指します。
+複数の変数が同じかどうかを比較したり、ある条件が成り立つかどうかを調べたりするときに使えます。
+
+```{r}
+molecular.species <- "FA 16:0"
+
+palmitic.acid <- "FA 16:0" # パルミチン酸（炭素数16の飽和脂肪酸）
+stearic.acid <- "FA 18:0" # ステアリン酸（炭素数18の飽和脂肪酸）
+
+print(molecular.species == palmitic.acid) # TRUE
+print(molecular.species == stearic.acid) # FALSE
+```
+
+# 2. データ構造
+
+## 2.1. ベクトル（vector）
+
+ベクトル（vector）は、同じデータ型の要素をまとめたもので、`ベクトル名 <- c(要素1, 要素2, ・・・)`で作ることができます。以下の例は文字列のみを格納したベクトルですが、数値や真偽値を入れることもできますし、同じ値の要素を複数入れたりすることもできます。
+ベクトルの中の要素は、`ベクトル名[インデックス番号]`で値を参照することができます。多くのプログラミング言語ではインデックス番号は`0`から始まりますが、Rでは`1`から始まることに注意する必要があります。
+
+```{r}
+fatty.acids <- c("FA 16:0", "FA 18:0", "FA 18:1", "FA 18:2", "FA 18:3")
+
+print(fatty.acids[1]) # 1番目の要素にアクセス
+print(fatty.acids[-1]) # 最後の要素にアクセス
+print(fatty.acids[2:4]) # 2番目から4番目の要素にアクセス
+```
+
+`ベクトル名[インデックス番号] <- 値`とすることで、指定したインデックス番号の要素の値を更新することができます。指定したインデックス番号の要素が存在しない場合は、新たに要素を追加します。
+
+```{r}
+fatty.acids <- c("FA 16:0", "FA 18:0", "FA 18:1", "FA 18:2", "FA 18:3")
+
+fatty.acids[4] = "FA 18:2 (6Z, 9Z)" # インデックス番号4の要素の値を更新
+fatty.acids[6] = "FA 18:4" # インデックス番号6の要素を追加
+print(fatty.acids)
+```
+
+ちなみに、`(6Z, 9Z)`は、二重結合の位置と様式を表しています。`6`と`9`はカルボン酸とは反対側の炭素原子から数えて何番目の炭素原子が二重結合を形成しているかを示し、`Z`というのは二重結合が*cis*であることを示しています。`E`だと*trans*ということになります。
+
+リノール酸の構造など詳しくは、以下のリンク先を見てください。
+
+[Linoleic acid (FA 18:2)](http://www.lipidmaps.org/data/LMSDRecord.php?LMID=LMFA01030120)
+
+二重結合がある場合は、本来であれば上記のように二重結合の位置や結合様式を明示する必要があるわけですが、少し長くなってしまうので、以降では省略することとします。
+
+リストに含まれる要素の数は`length`で確認することができます。
+
+```{r}
+fatty.acids <- c("FA 16:0", "FA 18:0", "FA 18:1", "FA 18:2", "FA 18:3")
+
+print(length(fatty.acids))
+```
+
+連続した整数を要素にもつベクトルを作成する場合は`seq`を使います。
+また、同じ整数を要素にもつベクトルを作成する場合は`rep`を使います。
+
+```{r}
+Cns <- seq(16, 24, 2)
+print(Cns)
+
+Uns <- rep(0, length(Cns))
+print(Uns)
+
+saturated.fatty.acids <- paste0("FA ", Cns, ":", Uns)
+print(saturated.fatty.acids)
+```
+
+上の例では、飽和脂肪酸の略号を生成しています。
+`seq(16, 24)`とすると、16から24までの連続した整数になります。
+脂肪酸の炭素原子数は基本的に偶数なので、偶数のみにするために最後に`, 2`をつけています。
+
+# 2.2. データフレーム（dataframe）
+
+データフレーム（dataframe）は、表形式のデータを扱いたいときに使えます。
+
+```{r}
+name <- c("palmitic acid", "stearic acid", "oleic acid") # 化合物名
+Cn <- c(16, 18, 18) # 脂肪酸の炭素原子数（鎖長）
+Un <- c(0, 0, 1) # 脂肪酸の二重結合数（不飽和度）
+
+fatty.acids <- data.frame(Name=name, Length=Cn, Unsaturation=Un) # 作成したベクトルを列として結合してdataframeを作成
+print(fatty.acids)
+
+print(fatty.acids[1, 1]) # 行番号、列番号を指定
+print(fatty.acids$Name) # 列名を指定
+print(fatty.acids$Name[1]) # 列名を指定して行番号を指定
+
+linoleic.acid <- data.frame(Name="linoleic acid", Length=18, Unsaturation=2)
+fatty.acids <- rbind(fatty.acids, linoleic.acid) # 新しい行を追加
+print(fatty.acids)
+
+fatty.acids$Abbreviation <- paste0("FA ", fatty.acids$Length, ":", fatty.acids$Unsaturation) # 列名を指定して新しい列を追加
+print(fatty.acids)
+
+exact.mass <- 12 * fatty.acids$Length + 1.00783 * (2 * fatty.acids$Length - 2 * fatty.acids$Unsaturation) + 15.99491 * 2
+fatty.acids <- cbind(fatty.acids, exact.mass) # 新しい列を追加
+print(fatty.acids)
+
+fatty.acids$Length <- NULL # 列名を指定して削除
+fatty.acids$Unsaturation <- NULL # 列名を指定して削除
+print(fatty.acids)
+```
+
+ここでは、脂肪酸の略号や精密質量をまとめた表を作成しました。
+
+# 3. 制御文
+
+## 3.1. if文
+
+`if (条件式){処理}`として、条件式が成り立つときの処理を記述します。
+`else`を使うことで、`if`に続く条件式が成り立たなかった場合の処理を記述することができます。
+さらに細かく条件を分けたい場合は、`else if (条件式){処理}`とすることで、別の条件が成り立つ場合の処理を記述することができます。
+
+```{r}
+Un <- 0
+
+if (Un == 0){
+  print("saturated fatty acid")
+} else {
+  print("unsaturated fatty acid")
+}
+```
+
+上のプログラムでは、不飽和度（脂肪酸の二重結合の数）を示す変数`Un`が`0`だった場合は、`saturated fatty acid`（飽和脂肪酸）と出力し、`Un`が`0`以外の数値だった場合は、`unsaturated fatty acid`（不飽和脂肪酸）と出力するようにしています。
+
+```{r}
+Cn <- 18
+Un <- 0
+
+if (Cn == 16 && Un == 0){
+  print("palmitic acid")
+} else if (Cn == 18 && Un == 0){
+  print("stearic acid")
+} else {
+  print("other fatty acid")
+}
+```
+
+ifの後の条件式において、`&&`は「かつ」というような意味になります。
+「または」にしたい場合は`||`を用います。
+
+最後に応用編として、SMILES記法で記述された化学構造から、飽和脂肪酸なのか不飽和脂肪酸なのかを判定することを考えてみます。
+
+```{r}
+
+```
+
+不飽和脂肪酸かどうかは、炭素鎖の中に二重結合が含まれるかどうかで判定することができます。
+カルボン酸部分にも二重結合はあるので、上のプログラムではそれ以外に二重結合があるかどうかを判定しています。
+
+## 3.2. switch文
+
+指定した変数の値によって処理を分けたいときに使います。
+`switch (変数, 値=処理, 値=処理, ・・・)`という風に書きます。
+
+```{r}
+Cn <- "16"
+
+switch (Cn,
+        "16" = print("palmitic acid"),
+        "18" = print("stearic acid"),
+        "20" = print("arachidic acid"),
+        print("other fatty acid")
+)
+```
+
+上の例では変数`Cn`に鎖長（炭素原子数）を格納し、その値によって出力する脂肪酸名を変えています。
+
+## 3.3. for文
+
+`for`はあらかじめ決まった回数だけ反復処理を行うときに使えます。
+`for (変数 in ベクトルなど){処理}`と書きます。
+
+```{r}
+carbon.numbers <- c(16, 18, 20, 22, 24)
+for (i in 1:length(carbon.numbers)){
+  print(paste0("FA ", carbon.numbers[i], ":0"))
+}
+```
+
+もちろん，`if`と組み合わせることもできます。
+
+```{r}
+carbon.numbers = c(16, 18, 20, 22, 24)
+unsaturation.numbers = c(0, 0, 4, 6, 0)
+
+for (i in 1:length(unsaturation.numbers)){
+  if (unsaturation.numbers[i] == 0){
+    print(paste0("FA ", carbon.numbers[i], ":", unsaturation.numbers[i], " is a saturated fatty acid."))
+  }else{
+    print(paste0("FA ", carbon.numbers[i], ":", unsaturation.numbers[i], " is an unsaturated fatty acid."))
+  }
+}
+```
+
+上の例では、`carbon.numbers`に脂肪酸の鎖長（炭素原子数）を、`unsaturation.numbers`に不飽和度（二重結合数）を格納しておき、ベクトルの要素を前から順番に取り出して脂肪酸の略号を書き出しています。
+その際に、不飽和度の値から飽和脂肪酸`saturated fatty acid`か不飽和脂肪酸`unsaturated fatty acid`かを判定しています。
+
+以下のように`break`を使うと反復処理を中断します。
+
+```{r}
+fatty.acids <- c("FA 16:0", "FA 18:0", "", "FA 18:1")
+
+for (i in 1:length(fatty.acids)){
+  if (fatty.acids[i] == ""){
+    print("空です。処理を中止します。")
+    break
+  }
+  print(fatty.acids[i])
+}
+```
+
+上の例では、リスト`fatty_acids`の左から3番目の要素が空となっているため、その前の要素まで反復処理が行われ、要素の値が出力されます。
+
+一方、`next`を使うと、反復処理がスキップされます。
+
+```{r}
+fatty.acids <- c("FA 16:0", "FA 18:0", "", "FA 18:1")
+
+for (i in 1:length(fatty.acids)){
+  if (fatty.acids[i] == ""){
+    print("空です。スキップします。")
+    next
+  }
+  print(fatty.acids[i])
+}
+```
+
+上の例では、空白の要素は`next`によって処理がスキップされるため、要素の値が出力されることはありませんが、最後まで処理が行われ、「FA 18:1」も出力されます。
+
+ここで応用編として、SMILES記法で書かれた文字列から、炭素原子の数と、炭素鎖の二重結合の数を求めることを考えます。
+
+```{r}
+```
+
+左から文字列を見て行って、Cだった場合は炭素原子数を数える変数Cnを1大きくし、=で次の文字がCだった場合（カルボニル炭素もあるため）に二重結合数を数える変数Unを1大きくしています。
+
+## 3.4. while文
+
+`while`を使うと、指定した条件が成立する限り、反復処理を行います。
+`while (条件){処理}`と記述します。
+
+```{r}
+Cn <- 12
+
+while (Cn <= 24){
+  print(paste0("FA ", Cn, ":0"))
+  Cn <- Cn + 2
+}
+```
+
+上の例では、変数`Cn`に脂肪酸の鎖長を代入し、鎖長が`24`以下の飽和脂肪酸の略号を出力しています。
+出力の後は`Cn`を2増やしています。これを忘れると、いつまでたっても`Cn`が`24`より大きくならず、「無限ループ」となるので注意が必要です。
+
+# 4. 関数
+
+# 4.1. 関数の作成と利用
+
+関数というのは、一連の処理をひとまとめにしたもので、`function(引数){処理}`と記述することができます。
+一度関数を作成したら、あとは関数名を呼び出すだけで、関数内に記述されている処理を実行できます。
+戻り値（返り値）は、`return`を使って書くことができます。
+
+```{r}
+exact.mass <- function(Cn, Un){
+  return (12 * Cn + 1.00783 * (2 * Cn - 2 * Un) + 15.99491 * 2)
+}
+
+exact.mass(16, 0)
+exact.mass(18, 2)
+```
+
+# 4.2. 変数のスコープ
+
+関数を利用する時には、「変数のスコープ」に注意する必要があります。
+変数のスコープというのは、変数がどの範囲で使えるかということで、関数内だけでしか使えない場合（ローカル変数）もあれば、関数の外でも使える場合（グローバル変数）もあります。
+
+```{r}
+abbreviation <- function(a, b){
+  Cn <- a
+  Un <- b
+  return (paste0("FA ", Cn, ":", Un))
+}
+
+Cn <- 16
+Un <- 0
+
+abbreviation(18, 2) # "FA 18:2"
+
+print(Cn) # 16
+print(Un) # 0
+```
+
+上の例では、関数`abbreviation`内で出てくる変数`Cn`と`Un`はいずれもローカル変数で、関数の外で定義されている`Cn`と`Un`とは別物です。
+なので、関数を呼び出しても、変数`Cn`と`Un`の値は更新されません。
+
+ここで、関数を呼び出すことで、変数`Cn`と`Un`の値も更新したい場合は、`<<-`を使って、関数内の`Cn`と`Un`がローカル変数ではなくグローバル変数であることを示す必要があります。
+
+```{r}
+abbreviation <- function(a, b){
+  Cn <<- a
+  Un <<- b
+  return (paste0("FA ", Cn, ":", Un))
+}
+
+Cn = 16
+Un = 0
+
+abbreviation(18, 2) # "FA 18:2"
+
+print(Cn) # 18
+print(Un) # 2
+```
+
+上の例では、`Cn`と`Un`がグローバル変数として扱われているので、関数呼び出し時に`Cn`と`Un`の値も更新されます。
